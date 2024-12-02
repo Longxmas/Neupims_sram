@@ -46,9 +46,12 @@ Scheduler::Scheduler(SimulationConfig config, const cycle_type* core_cycle)
     }
 
     // KV allocate by pim tile
+    // lll 先分配好权重，然后把剩余的空间按照channel进行kv cache的分配
+    // 那activation呢？可能是共用的
     int model_weight = _config.model_params_b * _config.precision / _config.n_tp;  // GB
     int memory_capacity = _dram_channels;                                          // GB
     int available_for_kv = memory_capacity - model_weight;                         // GB
+    // row buffer的大小 * 每个channel的bank数
     int pim_tile_size = _config.dram_page_size * _dram_banks_per_ch;               // B
     _total_tiles = floor((double)available_for_kv GB / pim_tile_size);
     _total_available_tiles = _total_tiles;
@@ -63,10 +66,14 @@ Scheduler::Scheduler(SimulationConfig config, const cycle_type* core_cycle)
     spdlog::info("Tiles per channel: {}", tiles_per_channel);
 
     // how often to create a page per number of tokens.
+    // 多少个token组成一个Page
     _key_period = _dram_banks_per_ch;
     _value_period = _dram_page_size;
 
     // how many PIM tiles compose a page.
+    // llk 这里跳步了，实际上是用了其值等于_dram_banks_per_ch的前提
+    // _value_page_size = effective_e * _key_period / pim_tile_size
+    //                  = _effective_e / _dram_banks_per_ch
     _key_page_size = ceil((double)_effective_e / _value_period);
     _value_page_size = ceil((double)_effective_e / _key_period);
 
@@ -166,6 +173,7 @@ void Scheduler::setup_requests() {
             _active_reqs++;
             // spdlog::info("Scheduler allocate request#{}(seq_len:{}) to channel {}<<",
             //              request->id, seq_len, ch);
+            // 预先分配好prefill需要用到的kv cache
             auto k = std::make_shared<PIMTensor>(
                 name_gen(std::to_string(request->id), "KEY", std::to_string(0)), ch, dim_key,
                 PIMTensorKVType::KEY, true);
@@ -209,9 +217,15 @@ void Scheduler::make_program() {
     std::shared_ptr<BatchedRequest> sub_batch_on_sa;  // = std::make_shared<BatchedRequest>(_breq1);
     std::shared_ptr<BatchedRequest> sub_batch_on_pim;  //= std::make_shared<BatchedRequest>(_breq2);
     if (static_cast<int>(_stage) % 2 == 0) {
+        // 如果是A(qkv gen1@npu)， C(Pj/FFNs/QKVgen#1 @npu),  E(Pj/FFNs#1 @npu)
+        // 那么breaq1就是npu负责的请求批次
+        // 在newton情况下只考虑sa部分的计算
         sub_batch_on_sa = std::make_shared<BatchedRequest>(_breq1);
         sub_batch_on_pim = std::make_shared<BatchedRequest>(_breq2);
     } else {
+        // 如果是B(mha @pim)
+        // 那么breaq1就是pim负责的请求批次
+        // 在newton情况下只考虑pim部分的计算
         sub_batch_on_sa = std::make_shared<BatchedRequest>(_breq2);
         sub_batch_on_pim = std::make_shared<BatchedRequest>(_breq1);
     }
@@ -236,21 +250,21 @@ int Scheduler::estimate_mha_latency(Ptr<InferRequest> request) {
     // key * query
     int chunks = ceil((double)_effective_e / _dram_page_size);
     int tiles = ceil((double)seq_len / _dram_banks_per_ch);
-    latency += chunks * _gwrite_latency;
-    latency += chunks * tiles * _gemv_latency;
+    latency += chunks * _gwrite_latency; // 写入query所需要的延迟
+    latency += chunks * tiles * _gemv_latency; // 执行key * query所需要的计算延迟
 
     // logit * value
     chunks = ceil((double)seq_len / _dram_page_size) * _nh;
     tiles = ceil((double)_dk / _dram_banks_per_ch);
-    latency += chunks * _gwrite_latency;
-    latency += chunks * tiles * _gemv_latency;
+    latency += chunks * _gwrite_latency; // 写入logit所需要的延迟
+    latency += chunks * tiles * _gemv_latency; // 执行logit * value所需要的计算延迟
 
     return latency;
 }
 
 void Scheduler::group_sub_batches() {
     if (_config.baseline_exp) {
-        //>>>
+        // 只需要看单批次情况下的处理（批次交错不考虑）
         // Consolidate to one batch
         for (int ch = 0; ch < _dram_channels; ch++) {
             auto req_queue = _active_request_queues[ch];
@@ -340,7 +354,7 @@ void Scheduler::cycle() {
         }
     }
     if (_config.baseline_exp) {
-        // >> newton
+        // >> newton 只需要关注这部分的处理
         bool both_program_none = _model_program1 == nullptr && _model_program2 == nullptr;
         bool exist_request = _breq2.size() > 0 || _breq1.size() > 0;
         if (both_program_none && exist_request) {
@@ -406,6 +420,7 @@ Tile& Scheduler::top_tile2(uint32_t core_id) {
 
 // ??: Add base address for each addr in tiles / XXX: < necessary comment?
 // ??: something wrong with functionality. seems it's not a necessary function
+// 取名为pop更合适?
 void Scheduler::get_tile1(uint32_t core_id) {
     if (_executable_tile_queue1.empty()) {
         return;
@@ -558,10 +573,9 @@ void Scheduler::refresh_stage() {
         _has_stage_changed = true;
 
         if (_config.baseline_exp) {
-            // >> newton
+            // >> newton 对应的stage只有A(qkv gen@npu)，B(mha @pim), E(Pj/FFn @npu),  Finish
             if (_stage == Stage::C) _stage = Stage::E;
             if (_stage == Stage::F) _stage = Stage::Finish;
-            // << newton
         }
         if (_just_one_stage) _stage = Stage::Finish;  // force to execute just one stage
     }
@@ -600,6 +614,7 @@ void Scheduler::refresh_status1() {
     }
     // initiate operation
     // xxx is count_active_operations() == 0 necessary?
+    // tile执行完了但是op仍然有未执行的
     if (_model_program1 != nullptr && _executable_tile_queue1.empty()) {
         // spdlog::info("executable operation count {}",
         //              _model_program1->get_executable_operations().size());
@@ -609,6 +624,7 @@ void Scheduler::refresh_status1() {
             // for (auto& op_stat : _active_operation_stats) {
             //     spdlog::info("op stat currently in is {}", op_stat.second.name);
             // }
+            // 这个Operation必须在已经激活的op里
             if (_active_operation_stats.find(op->get_id()) != _active_operation_stats.end()) {
                 return;
             }

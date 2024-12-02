@@ -24,7 +24,7 @@ Simulator::Simulator(SimulationConfig config) : _config(config), _core_cycles(0)
         fs::path(__FILE__).parent_path().append(config.pim_config_path).string();
     spdlog::info("Newton config: {}", pim_config);
     config.pim_config_path = pim_config;
-    _dram = std::make_unique<PIM>(config);
+    _dram = std::make_unique<PIM>(config); // 调用PIM的构造函数，利用config进行构造
 
     // Create interconnect object
     _icnt = std::make_unique<SimpleInterconnect>(config);

@@ -119,26 +119,26 @@ void NeuPIMSystolicWS::ld_queue_cycle() {
                    front.opcode == Opcode::PIM_COMP || front.opcode == Opcode::PIM_READRES ||
                    front.opcode == Opcode::PIM_COMPS_READRES) {
             assert(0);
-            Sram *buffer;
-            int buffer_id;
-            if (front.dest_addr >= ACCUM_SPAD_BASE) {
-                buffer = &_acc_spad;
-                buffer_id = front.accum_spad_id;
-            } else {
-                buffer = &_spad;
-                buffer_id = front.spad_id;
-            }
+            // Sram *buffer;
+            // int buffer_id;
+            // if (front.dest_addr >= ACCUM_SPAD_BASE) {
+            //     buffer = &_acc_spad;
+            //     buffer_id = front.accum_spad_id;
+            // } else {
+            //     buffer = &_spad;
+            //     buffer_id = front.spad_id;
+            // }
 
-            ast(!front.src_addrs.empty());
+            // ast(!front.src_addrs.empty());
 
-            MemoryAccess *mem_request = TransToMemoryAccess(
-                front, _config.dram_req_size, _id, _core_cycle, buffer_id, StagePlatform::SA);
+            // MemoryAccess *mem_request = TransToMemoryAccess(
+            //     front, _config.dram_req_size, _id, _core_cycle, buffer_id, StagePlatform::SA);
 
-            if (front.opcode == Opcode::PIM_READRES || front.opcode == Opcode::PIM_COMPS_READRES)
-                buffer->reserve(front.dest_addr, buffer_id, front.size, 1);
+            // if (front.opcode == Opcode::PIM_READRES || front.opcode == Opcode::PIM_COMPS_READRES)
+            //     buffer->reserve(front.dest_addr, buffer_id, front.size, 1);
 
-            push_memory_request(mem_request);
-            _ld_inst_queue_for_sa.pop();
+            // push_memory_request(mem_request);
+            // _ld_inst_queue_for_sa.pop();
 
         } else {
             assert(0);
@@ -518,42 +518,42 @@ void NeuPIMSystolicWS::pim_issue_ex_inst(Instruction inst) {
     if (inst.opcode == Opcode::GEMM || inst.opcode == Opcode::GEMM_PRELOAD) {
         // xxx: not yet for pim.
         assert(0);
-        auto parent_tile = inst.parent_tile.lock();
-        if (parent_tile == nullptr) {
-            assert(0);
-        }
-        // spdlog::info("COMPUTE Start cycle: {} inst:{}", _core_cycle, inst.repr());
-        parent_tile->stat.num_calculation += inst.tile_m * inst.tile_n * inst.tile_k;
+        // auto parent_tile = inst.parent_tile.lock();
+        // if (parent_tile == nullptr) {
+        //     assert(0);
+        // }
+        // // spdlog::info("COMPUTE Start cycle: {} inst:{}", _core_cycle, inst.repr());
+        // parent_tile->stat.num_calculation += inst.tile_m * inst.tile_n * inst.tile_k;
 
-        if (inst.opcode == Opcode::GEMM_PRELOAD) {
-            _stat_systolic_preload_issue_count++;
-        }
-        if (!_compute_pipeline.empty()) {
-            /* Preload can be hided */
-            uint32_t offset = _compute_pipeline.back().size;
-            // xxx why 4?
-            // maybe pushing to the systolic array input queue. 4 cycles to start?
-            offset = MAX(offset, 4);
-            if (inst.opcode == Opcode::GEMM_PRELOAD) {
-                // State mul-pre
-                parent_tile->stat.weight_load_cycles += _config.core_height;
-                offset = _config.core_height;
-            }
-            inst.start_cycle = _compute_pipeline.back().start_cycle + offset;
-        } else {
-            inst.start_cycle = _core_cycle;
-            /* Preload weight to systolic array*/
-            if (inst.opcode == Opcode::GEMM_PRELOAD) {
-                /* Weight preload  from buffer latecny + WEight preload
-                 * latency */
-                inst.start_cycle += _config.core_height + _config.core_height - 1;
-            }
-        }
+        // if (inst.opcode == Opcode::GEMM_PRELOAD) {
+        //     _stat_systolic_preload_issue_count++;
+        // }
+        // if (!_compute_pipeline.empty()) {
+        //     /* Preload can be hided */
+        //     uint32_t offset = _compute_pipeline.back().size;
+        //     // xxx why 4?
+        //     // maybe pushing to the systolic array input queue. 4 cycles to start?
+        //     offset = MAX(offset, 4);
+        //     if (inst.opcode == Opcode::GEMM_PRELOAD) {
+        //         // State mul-pre
+        //         parent_tile->stat.weight_load_cycles += _config.core_height;
+        //         offset = _config.core_height;
+        //     }
+        //     inst.start_cycle = _compute_pipeline.back().start_cycle + offset;
+        // } else {
+        //     inst.start_cycle = _core_cycle;
+        //     /* Preload weight to systolic array*/
+        //     if (inst.opcode == Opcode::GEMM_PRELOAD) {
+        //         /* Weight preload  from buffer latecny + WEight preload
+        //          * latency */
+        //         inst.start_cycle += _config.core_height + _config.core_height - 1;
+        //     }
+        // }
 
-        inst.finish_cycle = inst.start_cycle + get_inst_compute_cycles(inst);
-        // spdlog::info("finish_cycle: {}", inst.finish_cycle);
-        _compute_pipeline.push(inst);
-        _stat_systolic_inst_issue_count++;
+        // inst.finish_cycle = inst.start_cycle + get_inst_compute_cycles(inst);
+        // // spdlog::info("finish_cycle: {}", inst.finish_cycle);
+        // _compute_pipeline.push(inst);
+        // _stat_systolic_inst_issue_count++;
     } else if (inst.opcode == Opcode::COMP || inst.opcode == Opcode::IM2COL ||
                inst.opcode == Opcode::LAYERNORM || inst.opcode == Opcode::SOFTMAX ||
                inst.opcode == Opcode::ADD || inst.opcode == Opcode::GELU ||

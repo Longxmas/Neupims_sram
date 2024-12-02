@@ -15,3 +15,5 @@ dramsim3epoch.json
 
 log.sh
 perf.*
+
+cmake-3.22.1

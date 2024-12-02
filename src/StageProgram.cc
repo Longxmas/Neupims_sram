@@ -69,7 +69,7 @@ void StageProgram::init_SA_program() {
     bool lets_proj_ffns = enable_proj_ffns();
     bool lets_qkvgen = enable_qkv_gen();
 
-    std::vector<uint32_t> input_dim{N, E};
+    std::vector<uint32_t> input_dim{N, E}; // 输入就是N个请求的激活值，每个为1 * E。 那Prefill阶段呢？
     if (lets_proj_ffns) {
         input_dim[1] /= Config::global_config.n_tp;
     }
@@ -120,7 +120,7 @@ void StageProgram::init_PIM_program() {
         /* - [] todo: change query to real query from gkv gen */
         Ptr<InferRequest> request = _breq->_reqs[j];
         int q_len = request->is_initiated ? 1 : request->input_size;
-        assert(q_len == 1);
+        assert(q_len == 1); // 目前只考虑了decode阶段？
 
         query = std::make_shared<NPUTensor>("query", std::vector<uint32_t>{num_heads, q_len, dk},
                                             NPUTensorBufType::ACT, true);
@@ -180,6 +180,7 @@ bool StageProgram::check_exist_in_executable(uint32_t op_id) {
 }
 
 void StageProgram::finish_operation(uint32_t id) {
+    // 将当前op设置为结束，移除executable_operations
     _op_map[id]->set_finish();
     for (auto iter = _executable_operations.begin(); iter != _executable_operations.end(); iter++) {
         // spdlog::info("iterating operation: {}", (*iter)->get_name());
@@ -190,6 +191,7 @@ void StageProgram::finish_operation(uint32_t id) {
         }
     }
 
+    //执行其子节点
     for (auto op : _op_map[id]->get_child_nodes()) {
         // spdlog::info("finding operation: {} / {} ", op->get_name(), op->get_id());
         if (op->check_executable() && !check_exist_in_executable(op->get_id())) {
@@ -200,6 +202,7 @@ void StageProgram::finish_operation(uint32_t id) {
 }
 
 bool StageProgram::check_finish() {
+    // 遍历算子，检查其结束状况
     bool finish = true;
     for (auto const &[key, val] : _op_map) {
         finish = finish && val->check_finish();
