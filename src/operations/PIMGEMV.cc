@@ -75,6 +75,7 @@ Tile PIMGEMV::initialize_instructions() {
 
     int counter_for_debug = 0;  // delete it
 
+    // 对于batch内的请求，逐个执行计算
     for (int i = 0; i < _batch_size; i++) {
         auto query = _qs[i];
         auto key = _ks[i];
@@ -99,6 +100,7 @@ Tile PIMGEMV::initialize_instructions() {
                 .src_addrs = std::vector<addr_type>{p_header_addr},
                 .operand_id = _INPUT_OPERAND,
             });
+            // 写入数据的维度，维度呢？
             tile.instructions.push_back(Instruction{
                 .opcode = Opcode::PIM_GWRITE,
                 .dest_addr = sram_addr,
@@ -111,9 +113,11 @@ Tile PIMGEMV::initialize_instructions() {
             for (int ti = 0; ti < tiles_per_chunk; ti++) {
                 int num_head_in_tile =
                     (chunk == _chunks - 1) ? _heads_in_last_chunk : _heads_per_tile;
+                // 假设_chunks是列数，tiles_per_chunk是行数
+                // DRAM_row 就是第ti行，第chunk列
                 uint32_t DRAM_row = key->_rows[ti * _chunks + chunk];
-                int num_comps = _comps_per_head * num_head_in_tile;
-                int num_readres = num_head_in_tile;
+                int num_comps = _comps_per_head * num_head_in_tile; // 该tile需要执行的计算指令数量
+                int num_readres = num_head_in_tile; // readres是read result的意思，每个头的结果需要一个read指令
                 p_header_addr =
                     AddressConfig::encode_pim_header(ch, DRAM_row, false, num_comps, num_readres);
                 // P_HEADER (num_comps = comps_per_head * num_heads, num_readres
@@ -128,6 +132,7 @@ Tile PIMGEMV::initialize_instructions() {
                 std::string cmds = "P_HEADER ";
 
                 for (int head = 0; head < num_head_in_tile; head++) {
+                    // 这个地址怎么算的？不需要考虑tile维度？对应第chunk列的第head个头
                     int hi = _heads_per_tile * chunk + head;
                     uint64_t dram_addr = AddressConfig::encode_pim_comps_readres(
                         ch, DRAM_row, _comps_per_head, head == num_head_in_tile - 1);
@@ -141,15 +146,18 @@ Tile PIMGEMV::initialize_instructions() {
                             .operand_id = _INPUT_OPERAND,
                         };
                         // spdlog::info("comps:{}", _comps_per_head);
+                        // 每个head执行comps_per_head条计算指令
                         for (int j = 0; j < _comps_per_head; j++) {
                             // COMP * comps_per_head (channnel, row)
                             tile.instructions.push_back(comp_inst);
                             cmds += "COMP ";
                         }
+                        // 每个head用一条指令进行结果的读取
                         tile.instructions.push_back(Instruction{
                             .opcode = Opcode::PIM_READRES,
                             .dest_addr = sram_addr,
-                            .size = banks_per_channel * _config.precision,  // ???
+                            // 读取粒度为bank? 将该channel的所有Bank的值读取到SRAM里？
+                            .size = banks_per_channel * _config.precision,  // ??? 
                             .src_addrs = std::vector<addr_type>{dram_addr},
                             .operand_id = _INPUT_OPERAND,
                         });
@@ -170,7 +178,7 @@ Tile PIMGEMV::initialize_instructions() {
                     else
                         sram_readres_addrs[hi].push_back(sram_addr);
 
-                    sram_addr += banks_per_channel * _config.precision;
+                    sram_addr += banks_per_channel * _config.precision; // 每个head用一个channel所有的bank处理
                 }
             }
         }
@@ -212,15 +220,18 @@ void PIMGEMV::calculate_loops() {
     uint32_t E = _config.model_n_embd;
     uint32_t page_size = _config.dram_page_size / _config.precision;
     uint32_t banks_per_channel = _config.dram_banks_per_ch;
-    uint32_t datas_per_comp_cmd = _config.pim_comp_coverage;
+    uint32_t datas_per_comp_cmd = _config.pim_comp_coverage; // newton --> 16
 
+    // 对于7B模型，_chunks = 4096 / 512 = 8，意味着一个激活需要分配到8个sram里进行计算
     _chunks = ceil((double)E / page_size);            // # of gwrite
-    _heads_per_tile = ceil((double)page_size / _dk);  // # of readres
+    // 对于7B模型，_dk=128, page_size = 1024 / 2 = 512, _heads_per_tile = 4
+    _heads_per_tile = ceil((double)page_size / _dk);  // # of readres 
     _heads_in_last_chunk = ceil((double)(E % page_size) / _dk);
     // for debug
     spdlog::info("E: {}, page_size: {}, _dk: {}", E, page_size, _dk);
     spdlog::info("heads_in_last_chunk: {}", _heads_in_last_chunk);
 
+    // 对于7B模型，_comps_per_head = 8, 意味着每个头对应的维度需要8条计算指令执行？
     _comps_per_head = ceil((double)_dk / datas_per_comp_cmd);
 
     std::string yellow = "\033[1;33m";

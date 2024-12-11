@@ -81,3 +81,11 @@ ffn, projection
 
 gelu look up table
 adder + mult 作为address查表（需要分配空间 from kv cache space）
+
+
+12.7
+问题：
+PIMGEMV.cc是q*kT,由于q和k都是激活，它们会保存在Pim里
+而QKVGen，ffn，projection等是激活与权重相乘，权重是保存在npu里，需要进行搬运？
+
+弄清楚npu的存储和pim的区别，pim是否存储了权重？（应该是没有的，但是不知道npu对应的dram地址在哪里）

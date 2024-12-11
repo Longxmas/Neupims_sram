@@ -4,6 +4,7 @@ KVCacheAlloc::KVCacheAlloc()
     : _kv_cache_size(0), _kv_cache_limit(0), _kv_cache_entry_size(0), _base_addr(0), _base_row(0) {}
 
 void KVCacheAlloc::init(addr_type base_addr) {
+    spdlog::info("KVCacheAlloc base_addr : {}", base_addr);
     _mode = Config::global_config.run_mode;
     if (_mode == RunMode::NPU_ONLY) {  // NPU only mode
         init_npu_layout(base_addr);

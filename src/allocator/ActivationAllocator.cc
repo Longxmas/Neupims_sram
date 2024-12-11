@@ -3,10 +3,12 @@
 ActAlloc::ActAlloc() : _base_addr(0), _top_addr(0), _act_buf_size(0), _act_buf_limit(0) {}
 
 void ActAlloc::init(addr_type base_addr) {
+    spdlog::info("ActAlloc base_addr : {}", base_addr);
     _base_addr = base_addr;
     _top_addr = base_addr;
     _act_buf_size = Config::global_config.HBM_act_buf_size;
     _act_buf_limit = _base_addr + _act_buf_size;
+    spdlog::info("ActAlloc _act_buf_limit : {}", _act_buf_limit);
 }
 
 addr_type ActAlloc::allocate(uint64_t size) {

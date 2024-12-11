@@ -201,6 +201,7 @@ Tile NeuPIMSLogitSoftmax::initialize_instructions(int start, int end) {
                     (chunk == _chunks - 1) ? _heads_in_last_chunk : _heads_per_tile;
 
                 uint32_t DRAM_row = key->_rows[ti * _chunks + chunk];
+                spdlog::info("DRAM_row : {}", DRAM_row);
                 int num_comps = _comps_per_head * num_head_in_tile;
                 int num_readres = num_head_in_tile;
                 if (num_head_in_tile == 0) {
@@ -225,6 +226,8 @@ Tile NeuPIMSLogitSoftmax::initialize_instructions(int start, int end) {
 
                     uint64_t dram_addr = AddressConfig::encode_pim_comps_readres(
                         ch, DRAM_row, _comps_per_head, head == num_head_in_tile - 1);
+                    
+                    spdlog::info("dram_addr : {}", dram_addr);
 
                     auto sram_entry = allocate_sram_addr(banks_per_channel, false);
                     addr_type sram_addr = sram_entry.first;

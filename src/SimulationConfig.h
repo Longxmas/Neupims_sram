@@ -32,8 +32,8 @@ struct SimulationConfig {
     uint32_t max_batch_size;
     uint32_t max_active_reqs;  // max size of (ready_queue + running_queue) in scheduler
     uint32_t max_seq_len;
-    uint64_t HBM_size;          // HBM size in bytes
-    uint64_t HBM_act_buf_size;  // HBM activation buffer size in bytes
+    uint64_t HBM_size;          // HBM size (GB)
+    uint64_t HBM_act_buf_size;  // HBM activation buffer size (MB)
 
     /* Core config */
     uint32_t num_cores;

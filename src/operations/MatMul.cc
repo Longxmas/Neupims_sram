@@ -222,6 +222,7 @@ Tile MatMul::initialize_instructions(uint32_t B, uint32_t M, uint32_t K, uint32_
                             activation_indexes.push_back(m_outer_offset + m_inner_offset + m_loop);
                             activation_indexes.push_back(k_outer_offset + k_inner_offset + k_loop);
                             auto activation_addr = activation_tensor->get_addr(activation_indexes);
+                            // spdlog::info("activation_addr : {}", activation_addr);
                             // xxx is it ok to validate with garbage_addr?
                             if (activation_addr != GARBAGE_ADDR) {
                                 // save maximum tile_m, tile_k value
@@ -268,6 +269,7 @@ Tile MatMul::initialize_instructions(uint32_t B, uint32_t M, uint32_t K, uint32_
                             weight_indexes.push_back(k_outer_offset + k_inner_offset + k_loop);
                             weight_indexes.push_back(n_outer_offset + n_inner_offset + n_loop);
                             auto weight_addr = weight_tensor->get_addr(weight_indexes);
+                            // spdlog::info("weight_addr : {}", weight_addr);
                             if (weight_addr != GARBAGE_ADDR) {
                                 tile_n = n_loop + 1;
                                 weight_addrs.push_back(weight_addr);
